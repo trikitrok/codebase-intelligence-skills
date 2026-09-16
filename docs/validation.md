@@ -1,65 +1,25 @@
-# Validation record
+# V3 validation
 
-Validation was limited to this repository and small temporary fixtures created under `tests/`. No external repository was cloned, downloaded, or analyzed as a test target.
+`make test` runs the deterministic helper suite in `tests/test_history_candidates.py`. It constructs only temporary local Git repositories and fake Code Maat executables. The suite maps all 40 normative helper areas in `SPEC-V3.md` to assertions covering Git history, physical LOC, filtering, bulk quality, renames/deletions, ranking, temporal coupling, provenance, errors, CSV validation, executable invocation/fallback, structural output, and explicit output files.
 
-## Automated checks
+`make validate` checks the exact nine skills, frontmatter, explicit-only policies, equivalent portable/compatibility manifest skill exposure, local links, shared-reference loading, obsolete V2 references/commands, and unfinished placeholders.
 
-`make test` runs 20 test methods covering:
+The manual instruction review confirms bounded scope, distinct adjacent skills, source-first behavior, permission-gated optional tooling, semantic (not lexical) verification, and that historical candidates are not conclusions. Real Code Maat, Java, Docker, network access, external repositories, and real-world semantic evaluation are intentionally not run; actual Code Maat runtime compatibility and validation in a target repository remain user validation activities.
 
-1. Git change-frequency, churn, ownership, and temporal-coupling normalization.
-2. Evidence-schema validation and metric-definition retention.
-3. The public cache CLI requiring an analysis provider and automatically comparing the Git request's parameters.
-4. Git+LOC hotspot fallback, deterministic physical-LOC semantics, irrelevant-path exclusions, and change-frequency/size ranking.
-5. LOC-input cache invalidation with a dirty working tree and invalidation after a new commit.
-6. Analyzer-version and schema-version invalidation.
-7. Code Maat version changes supplied by the current request, refusal to fall back to a cached version, and CSV/analysis parameter invalidation.
-8. Code Maat native revisions/entity-churn hotspot composition without fallback LOC.
-9. Observation/store provenance equality and repository-metadata consistency corruption failures.
-10. Repository-relative file and file-pair subjects, including rejection by the Code Maat adapter.
-11. Shallow and insufficient-history limitations.
-12. An empty Git repository failure.
-13. Code Maat coupling conversion and malformed CSV failure.
-14. Deterministic query/filter/limit behavior.
-15. Valid, missing, and escaping path/reference checks.
-16. Unsupported language fallback and available/missing tool discovery.
-17. Nested manifest discovery for monorepos.
+## Deterministic 40-area matrix
 
-`make validate` checks both plugin manifests, the exact nine-skill set, frontmatter names/descriptions, explicit-only policies, local Markdown links in skill entrypoints, and unfinished scaffold placeholders.
-
-## Failure-path coverage
-
-| Required path | Validation |
+| Areas | Exact test and assertion |
 |---|---|
-| Recommended tool available/absent | Tool discovery is tested with controlled available and missing commands. |
-| User declines installation | Instruction-level fallback and permission policy is structurally reviewed; no installer exists to bypass it. |
-| Insufficient/shallow history | Both limitations are fixture-tested. |
-| Dirty working tree | Recorded and tested as a cache miss for Git+LOC evidence because current source is an input. |
-| Repository without history | Empty Git repository failure is tested. |
-| Unsupported language | Unknown-extension discovery and standard-library Git+LOC fallback are tested/documented. |
-| Malformed provider output | Code Maat CSV failure is tested. |
-| Provider, analyzer, parameter, provider-input, schema changes | Cache invalidation is tested through provider-specific analysis requests. |
-| Corrupt provenance or repository subjects | Store/observation disagreement, repository metadata disagreement, and invalid file/file-pair paths are tested. |
-
-No bundled path installs optional tools, so “declined” and “missing” converge on the documented language-independent fallback rather than separate executable branches.
-
-## External development-time validators
-
-`make validate` is fully checked in and does **not** claim to run OpenAI's development-environment validators. When those external scripts are installed, they can be incorporated reproducibly by supplying their paths:
-
-```text
-make validate-openai SKILL_VALIDATOR=/path/to/quick_validate.py PLUGIN_VALIDATOR=/path/to/validate_plugin.py
-```
-
-That target runs `quick_validate.py` against every skill and `validate_plugin.py` against this plugin root. The scripts are not vendored here, so their availability and behavior are development-environment checks rather than guarantees of the repository's normal `make validate` workflow.
-
-For the 2026-09-16 verification recorded here, the target was run with the locally installed OpenAI validators: all nine skill validations and the plugin validation passed.
-
-## Problems found and resulting changes
-
-- The first fixture run failed on Python without `str.removeprefix`; parsing was changed to slicing for broader compatibility.
-- A “non-Git directory” fixture under this repository inherited the parent Git root. It was replaced with an empty standalone Git repository inside the test directory, accurately testing Git-without-history while respecting the no-outside-test-repository constraint.
-- Current official docs prefer portable root `plugin.json` while retaining `.codex-plugin/plugin.json`; the portable manifest was added without removing the compatibility fallback.
-
-## Not validated here
-
-No claim is made that semantic outputs are high quality on real repositories. Manual evaluation should cover multiple repository sizes and ecosystems, monorepos, shallow clones, unusual histories, generated-heavy repositories, stale architecture documents, and ambiguous runtime/framework wiring.
+| 1, 12–14 | `test_hotspot_count_rank_order_limit_and_provenance`: revision counts, dense ranks, ordering, totals, truncation, result-level provenance. |
+| 2 | `test_physical_loc_and_symlink_safety`: blanks, final-newline behavior, empty, binary exclusion, outside symlink exclusion. |
+| 3–4, 18 | `test_default_and_explicit_filters_keep_tests`: all default path classes, repeatable globs, test-path eligibility. |
+| 5–7 | `test_bulk_excludes_hotspot_and_temporal_metrics`: hotspot/temporal exclusion, endpoint support, ratios, limitation codes. |
+| 8–11 | `test_rename_deletion_and_include_deleted`: multi-step rename/current mapping, ordinary deletion accounting, deleted-policy result. |
+| 15–17 | `test_temporal_formula_order_and_exact_subject`: shared counts, endpoint revisions, coupling, support ordering, exact subject matching. |
+| 19–21 | `test_history_quality_limitations_and_empty_insufficient`: shallow, insufficient, low-sample, and short-span limitations. |
+| 22, 39 | `test_provenance_dirty_scope_and_parameters`: dirty state, input scope, validity-critical parameters, no candidate provenance. |
+| 23–25 | `test_operational_git_failures_are_structured`: empty Git, non-Git, and missing Git errors. |
+| 26–31 | `test_csv_validation_support_semantics_hashes_and_filters`: native CSV metrics, percentage/support fields, validation failures, SHA-256, mismatch code, imported limitations. |
+| 32–35, 37 | `test_executable_filtering_support_and_provider_behavior`: fake executable, filtered input, optional support and threshold, direct command execution, auto fallback, explicit failure, CSV-before-command precedence, clean stdout. |
+| 36, 38 | `test_argument_and_structured_output_errors`: conflicts, usage exit 2, operational structured output-path error. |
+| 40 | `test_output_file_matches_stdout`: explicit output content equals stdout. |
