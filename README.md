@@ -37,6 +37,92 @@ For a repository marketplace, place this package at `$REPO_ROOT/plugins/codebase
 
 That object belongs in the marketplace's `plugins` array. Personal installation follows the same marketplace model at `~/.agents/plugins/marketplace.json`; use the official guide for the current personal plugin-root convention.
 
+### Test it in an existing project
+
+For a local, repository-scoped trial, copy the complete plugin directory into the project you want to inspect. Keeping the whole directory is important: the skills reference shared policies and the deterministic helper under `shared/`.
+
+```bash
+cd /path/to/existing-project
+mkdir -p plugins .agents/plugins
+cp -a /path/to/codebase-intelligence plugins/codebase-intelligence
+```
+
+Create or merge this entry into `.agents/plugins/marketplace.json` (preserve any existing `plugins` entries):
+
+```json
+{
+  "name": "local",
+  "interface": {"displayName": "Local plugins"},
+  "plugins": [
+    {
+      "name": "codebase-intelligence",
+      "source": {"source": "local", "path": "./plugins/codebase-intelligence"},
+      "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+      "category": "Developer Tools"
+    }
+  ]
+}
+```
+
+If this is a non-default repository marketplace, register its marketplace directory with the Codex client:
+
+```bash
+codex plugin marketplace add /path/to/existing-project/.agents/plugins
+```
+
+Reload or restart Codex, then invoke a skill explicitly, for example:
+
+```text
+$codebase-onboarding Orient me to this repository.
+$codebase-hotspots Investigate maintenance hotspots.
+$codebase-verify Audit docs/architecture.md against the source.
+```
+
+The bundled Git provider needs no extra dependency. Code Maat is optional. The skills are read-only with respect to the inspected project; run the package checks separately before testing changes to the plugin:
+
+```bash
+cd /path/to/codebase-intelligence
+make test
+make validate
+```
+
+After editing a locally installed plugin, refresh/reinstall it through the Codex client so the updated skill files are loaded. Do not copy only one `SKILL.md` unless you also preserve the package's shared references and helper layout.
+
+### Test from GitHub
+
+When this repository is pushed to GitHub, use it as a Git-backed marketplace source. A GitHub repository is not discovered as a plugin from `plugin.json` alone; it needs a marketplace catalog at `.agents/plugins/marketplace.json`. Because this repository's root is already the plugin root, the catalog can point at `./`:
+
+```json
+{
+  "name": "codebase-intelligence",
+  "interface": {"displayName": "Codebase Intelligence"},
+  "plugins": [
+    {
+      "name": "codebase-intelligence",
+      "source": {"source": "local", "path": "./"},
+      "policy": {"installation": "AVAILABLE", "authentication": "ON_INSTALL"},
+      "category": "Developer Tools"
+    }
+  ]
+}
+```
+
+Commit that file alongside the existing root `plugin.json`, `.codex-plugin/plugin.json`, `skills/`, `shared/`, and `scripts/` directories. From the machine where you want to test it, add the GitHub marketplace and optionally pin a branch or release tag:
+
+```bash
+codex plugin marketplace add YOUR_GITHUB_USER/codebase-intelligence --ref main
+codex plugin marketplace list
+```
+
+Replace `main` with a release tag such as `v0.1.0` when you want a reproducible version. Restart or reload the Codex/ChatGPT desktop client, open the Plugins Directory, choose the repository marketplace, and install `codebase-intelligence`. Then open the separate project you want to inspect and invoke a skill explicitly:
+
+```text
+$codebase-onboarding Orient me to this repository.
+$codebase-hotspots Investigate maintenance hotspots.
+```
+
+When the repository contains multiple plugins, put each plugin below `plugins/<plugin-name>/` and change the catalog entry's `source.path` to `./plugins/<plugin-name>`. GitHub marketplace sources, refs, sparse checkouts, upgrades, and removal are documented in the [official plugin marketplace guidance](https://developers.openai.com/plugins/build/plugins#add-a-marketplace-from-the-cli).
+
 For development without plugin packaging, Codex also discovers standalone skills from `.agents/skills` at repository, parent, and user scopes. Copy or symlink individual folders from `skills/` there if only selected capabilities are wanted. The plugin form is preferred for the complete suite because current guidance recommends plugins for bundles of multiple reusable skills.
 
 After installation, use `$codebase-onboarding`, `$codebase-coupling`, and the other names shown above. In Codex CLI or the IDE extension, typing `$` or using `/skills` exposes installed skills.
