@@ -42,7 +42,7 @@ The evidence store is a JSON object containing `schema_version`, `store_kind`, c
 - `churn`: added/deleted/absolute line counts.
 - `temporal_coupling`: co-change observations and provider-defined coupling.
 - `ownership`: author counts or contribution concentration.
-- `complexity`, `static_dependency`, and `test_coverage`: reserved for adapters that preserve a provider's definitions and units.
+- `complexity`, `static_dependency`, and `test_coverage`: reserved for adapters that preserve a provider's definitions and units. The Git fallback uses `complexity` only for an explicitly labeled language-agnostic physical-LOC proxy; it is not a cyclomatic or cognitive complexity score.
 
 Subjects are repository, component, directory, file, symbol, file pair, or component pair. File paths, including both sides of file pairs, are normalized repository-relative identifiers: absolute paths, backslashes, `.` segments, and `..` traversal are invalid. Components require repository evidence such as build modules, manifests, explicit configuration, or inspected source boundaries; never aggregate arbitrary directory names as architecture without labeling the inference.
 
@@ -56,7 +56,7 @@ All observations identify provider, provider version, repository identity and HE
 
 Evidence v1 deliberately repeats the complete store provenance on every observation so an extracted observation remains interpretable. Validation therefore requires exact equality between observation and store provenance. Repository metadata must also agree with the store's repository identity, HEAD, dirty state, working-tree fingerprint, and shallow-history state. Contradictory copies are corruption, not an alternate source of truth.
 
-- `committed_history` evidence is valid only for the same repository identity, HEAD, provider/version, analyzer version, schema, parameters, and provider inputs. A dirty working tree alone does not invalidate it because it did not consume working files.
+- `committed_history` evidence is valid only for the same repository identity, HEAD, provider/version, analyzer version, schema, parameters, and provider inputs. The Git+LOC hotspot fallback additionally consumes current tracked text files, so its `committed_history+working_tree` scope invalidates on dirty source changes.
 - Evidence whose scope includes the working tree must also match dirty state and fingerprint.
 - Incompatible schema versions are rejected; recompute or write an explicit migration rather than silently interpreting them.
 

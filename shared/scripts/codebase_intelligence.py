@@ -26,6 +26,11 @@ from typing import Any, Iterable
 SCHEMA_VERSION = 1
 ANALYZER_VERSION = "0.1.0"
 HISTORY_PROVIDER = "codebase-intelligence-git"
+LOC_DEFINITION_VERSION = "physical-lines-v1"
+IGNORED_PATH_PARTS = frozenset({
+    ".git", ".cache", ".venv", "__pycache__", "build", "cache", "coverage",
+    "dist", "generated", "node_modules", "target", "vendor", "venv",
+})
 EVIDENCE_TYPES = {
     "change_frequency",
     "churn",
@@ -272,7 +277,100 @@ def history_parameters(args: argparse.Namespace) -> dict[str, Any]:
         "max_commits": args.max_commits,
         "max_changeset_size": args.max_changeset_size,
         "min_shared_commits": args.min_shared_commits,
+        "loc_definition": LOC_DEFINITION_VERSION,
+        "loc_ignored_path_parts": sorted(IGNORED_PATH_PARTS),
     }
+
+
+def relevant_repository_path(path: str) -> bool:
+    """Keep the fallback language-neutral while removing obvious noise."""
+    parts = PurePosixPath(path).parts
+    lowered = {part.lower() for part in parts}
+    name = parts[-1].lower() if parts else ""
+    return not lowered & IGNORED_PATH_PARTS and not name.endswith((".min.js", ".map"))
+
+
+def tracked_loc(root: Path) -> dict[str, int]:
+    """Count physical text lines in current tracked files, deterministically.
+
+    A line is each record returned by bytes.splitlines(); blank lines count and
+    a final newline does not create an extra line. Binary files and obvious
+    generated/vendor/build/cache paths are excluded.
+    """
+    output = git(root, "ls-files", "-z").stdout
+    result: dict[str, int] = {}
+    for raw_path in filter(None, output.split("\0")):
+        path = raw_path.replace("\\", "/")
+        if not relevant_repository_path(path):
+            continue
+        candidate = root / path
+        try:
+            content = candidate.read_bytes()
+        except OSError:
+            continue
+        if b"\0" in content:
+            continue
+        result[path] = len(content.splitlines())
+    return result
+
+
+def descending_rank(value: float, values: list[float]) -> float:
+    """Return a deterministic 0..1 rank, with the largest value at 1."""
+    if len(values) <= 1:
+        return 1.0
+    ordered = sorted(values)
+    return ordered.index(value) / (len(ordered) - 1)
+
+
+def rank_hotspots(store: dict[str, Any], limit: int | None = 20) -> dict[str, Any]:
+    """Rank candidates without turning a metric into a semantic conclusion.
+
+    Git fallback: revision frequency x current physical LOC. Code Maat:
+    provider revisions x provider absolute entity churn. Each axis is ranked
+    within the candidate set before multiplication, so one huge but rarely
+    changed file cannot dominate by size alone.
+    """
+    errors = validate_store(store)
+    if errors:
+        raise CBIError("invalid evidence store: " + "; ".join(errors))
+    by_path: dict[str, dict[str, dict[str, Any]]] = {}
+    for item in store["observations"]:
+        subject = item["subject"]
+        if subject.get("type") != "file":
+            continue
+        path = subject["path"]
+        by_path.setdefault(path, {})[item["type"]] = item
+    provider = store["provenance"]["provider"]
+    size_type = "complexity" if provider == HISTORY_PROVIDER else "churn"
+    size_metric = "loc" if size_type == "complexity" else "absolute_churn"
+    candidates = []
+    for path, observations in by_path.items():
+        frequency = observations.get("change_frequency")
+        size = observations.get(size_type)
+        if not frequency or not size:
+            continue
+        revisions = frequency["metrics"].get("revisions")
+        size_value = size["metrics"].get(size_metric)
+        if not isinstance(revisions, (int, float)) or not isinstance(size_value, (int, float)):
+            continue
+        candidates.append({"path": path, "revisions": revisions, size_metric: size_value})
+    revision_values = [float(item["revisions"]) for item in candidates]
+    size_values = [float(item[size_metric]) for item in candidates]
+    for item in candidates:
+        item["revision_rank"] = descending_rank(float(item["revisions"]), revision_values)
+        item["size_rank"] = descending_rank(float(item[size_metric]), size_values)
+        item["hotspot_score"] = item["revision_rank"] * item["size_rank"]
+    candidates.sort(key=lambda item: (-item["hotspot_score"], -item["revisions"], -item[size_metric], item["path"]))
+    if limit is not None:
+        candidates = candidates[:limit]
+    definition = (
+        "descending percentile rank of commits touching file multiplied by "
+        "descending percentile rank of current physical LOC"
+        if provider == HISTORY_PROVIDER else
+        "descending percentile rank of provider revisions multiplied by "
+        "descending percentile rank of provider absolute entity churn"
+    )
+    return {"provider": provider, "metric_definition": definition, "count": len(candidates), "candidates": candidates}
 
 
 def code_maat_parameters(input_path: str, analysis: str) -> dict[str, Any]:
@@ -282,6 +380,14 @@ def code_maat_parameters(input_path: str, analysis: str) -> dict[str, Any]:
     except OSError as exc:
         raise CBIError(f"cannot read Code Maat CSV: {exc}") from exc
     return {"analysis": analysis, "input_sha256": input_hash}
+
+
+def code_maat_hotspot_parameters(revisions_input: str, churn_input: str) -> dict[str, Any]:
+    return {
+        "analysis": "hotspots",
+        "revisions_input_sha256": code_maat_parameters(revisions_input, "revisions")["input_sha256"],
+        "entity_churn_input_sha256": code_maat_parameters(churn_input, "entity-churn")["input_sha256"],
+    }
 
 
 def observation(kind: str, subject: dict[str, Any], metrics: dict[str, Any], prov: dict[str, Any]) -> dict[str, Any]:
@@ -299,10 +405,11 @@ def analyze_history(args: argparse.Namespace) -> dict[str, Any]:
     meta = repo_metadata(str(root))
     parameters = history_parameters(args)
     commits = parse_git_history(root, args.since, args.max_commits)
+    loc_by_file = tracked_loc(root)
     per_file: dict[str, dict[str, Any]] = {}
     pair_shared: dict[tuple[str, str], int] = {}
     for item in commits:
-        paths = sorted(item["files"])
+        paths = sorted(path for path in item["files"] if relevant_repository_path(path))
         for path in paths:
             stats = per_file.setdefault(path, {"revisions": 0, "added": 0, "deleted": 0, "binary_revisions": 0, "authors": {}})
             stats["revisions"] += 1
@@ -318,9 +425,11 @@ def analyze_history(args: argparse.Namespace) -> dict[str, Any]:
             for pair in combinations(paths, 2):
                 pair_shared[pair] = pair_shared.get(pair, 0) + 1
 
-    prov = provenance(meta, HISTORY_PROVIDER, ANALYZER_VERSION, parameters, "committed_history")
+    prov = provenance(meta, HISTORY_PROVIDER, ANALYZER_VERSION, parameters, "committed_history+working_tree")
     observations: list[dict[str, Any]] = []
     for path in sorted(per_file):
+        if not relevant_repository_path(path):
+            continue
         stats = per_file[path]
         subject = {"type": "file", "path": path}
         observations.append(observation("change_frequency", subject, {"revisions": stats["revisions"], "unit": "commits_touching_file"}, prov))
@@ -341,6 +450,13 @@ def analyze_history(args: argparse.Namespace) -> dict[str, Any]:
             "revisions_by_author": dict(author_rows),
             "metric_definition": "commit touches attributed to Git author name",
         }, prov))
+        if path in loc_by_file:
+            observations.append(observation("complexity", subject, {
+                "loc": loc_by_file[path],
+                "unit": "physical_lines",
+                "metric_definition": "current tracked text-line count; blank lines count",
+                "proxy": "language-agnostic size/complexity proxy",
+            }, prov))
     for (left, right), shared in sorted(pair_shared.items()):
         if shared < args.min_shared_commits:
             continue
@@ -508,17 +624,19 @@ def expected_cache_provenance(args: argparse.Namespace) -> dict[str, Any]:
             "provider": HISTORY_PROVIDER,
             "provider_version": ANALYZER_VERSION,
             "parameters": history_parameters(args),
-            "input_scope": "committed_history",
+            "input_scope": "committed_history+working_tree",
         }
     if args.provider == "code-maat":
         if not args.provider_version:
             raise CBIError("--provider-version is required for Code Maat cache validation")
         if not args.maat_analysis or not args.input:
             raise CBIError("--maat-analysis and --input are required for Code Maat cache validation")
+        if args.maat_analysis == "hotspots" and not getattr(args, "churn_input", None):
+            raise CBIError("--churn-input is required for Code Maat hotspot cache validation")
         return {
             "provider": "code-maat",
             "provider_version": args.provider_version,
-            "parameters": code_maat_parameters(args.input, args.maat_analysis),
+            "parameters": code_maat_hotspot_parameters(args.input, args.churn_input) if args.maat_analysis == "hotspots" else code_maat_parameters(args.input, args.maat_analysis),
             "input_scope": "committed_history",
         }
     raise CBIError(f"unsupported cache provider: {args.provider}")
@@ -584,8 +702,12 @@ def query_store(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def maat_rows(args: argparse.Namespace) -> list[dict[str, str]]:
+    return maat_rows_for(args.input)
+
+
+def maat_rows_for(input_path: str) -> list[dict[str, str]]:
     try:
-        with Path(args.input).open(encoding="utf-8-sig", newline="") as stream:
+        with Path(input_path).open(encoding="utf-8-sig", newline="") as stream:
             reader = csv.DictReader(stream)
             if not reader.fieldnames:
                 raise CBIError("Code Maat CSV has no header")
@@ -604,54 +726,83 @@ def need(row: dict[str, str], names: Iterable[str], row_number: int) -> str:
 def adapt_code_maat(args: argparse.Namespace) -> dict[str, Any]:
     _, root = ensure_repo(args.repo)
     meta = repo_metadata(str(root))
-    params = code_maat_parameters(args.input, args.analysis)
+    if args.analysis == "hotspots" and not getattr(args, "churn_input", None):
+        raise CBIError("--churn-input is required for Code Maat hotspot adaptation")
+    params = code_maat_hotspot_parameters(args.input, args.churn_input) if args.analysis == "hotspots" else code_maat_parameters(args.input, args.analysis)
     prov = provenance(meta, "code-maat", args.provider_version, params, "committed_history")
     observations: list[dict[str, Any]] = []
-    for row_number, row in enumerate(maat_rows(args), start=2):
-        if args.analysis == "revisions":
-            path = need(row, ("entity", "module"), row_number)
-            revisions = int(need(row, ("n-revs", "revisions"), row_number))
-            observations.append(observation("change_frequency", {"type": "file", "path": path}, {
-                "revisions": revisions,
-                "unit": "Code Maat revisions",
-                "metric_definition": "provider-defined Code Maat revisions",
-            }, prov))
-        elif args.analysis == "entity-churn":
-            path = need(row, ("entity", "module"), row_number)
-            added = int(need(row, ("added",), row_number))
-            deleted = int(need(row, ("deleted",), row_number))
-            observations.append(observation("churn", {"type": "file", "path": path}, {
-                "lines_added": added,
-                "lines_deleted": deleted,
-                "absolute_churn": added + deleted,
-                "unit": "lines",
-                "metric_definition": "Code Maat entity-churn absolute line counts",
-            }, prov))
-        elif args.analysis == "authors":
-            path = need(row, ("entity", "module"), row_number)
-            authors = int(need(row, ("n-authors", "authors"), row_number))
-            revisions = int(need(row, ("n-revs", "revisions"), row_number))
-            observations.append(observation("ownership", {"type": "file", "path": path}, {
-                "authors": authors,
-                "revisions": revisions,
-                "metric_definition": "Code Maat distinct authors and revisions",
-            }, prov))
-        elif args.analysis == "coupling":
-            left = need(row, ("entity",), row_number)
-            right = need(row, ("coupled",), row_number)
-            degree = float(need(row, ("degree",), row_number))
-            metrics: dict[str, Any] = {
-                "coupling": degree,
-                "range": [0, 100],
-                "unit": "percent",
-                "metric_definition": "Code Maat coupling degree; provider semantics preserved",
-            }
-            if row.get("average-revs"):
-                metrics["average_revisions"] = float(row["average-revs"])
-            for source, destination in (("shared-revisions", "shared_revisions"), ("entity-revisions", "left_revisions"), ("coupled-revisions", "right_revisions")):
-                if row.get(source):
-                    metrics[destination] = int(row[source])
-            observations.append(observation("temporal_coupling", {"type": "file_pair", "paths": [left, right]}, metrics, prov))
+    if args.analysis == "hotspots":
+        revisions = {
+            need(row, ("entity", "module"), row_number): int(need(row, ("n-revs", "revisions"), row_number))
+            for row_number, row in enumerate(maat_rows(args), start=2)
+        }
+        churn_rows = {
+            need(row, ("entity", "module"), row_number): row
+            for row_number, row in enumerate(maat_rows_for(args.churn_input), start=2)
+        }
+        if set(revisions) != set(churn_rows):
+            raise CBIError("Code Maat hotspot inputs must contain the same entities")
+        for path in sorted(revisions):
+            row = churn_rows[path]
+            added = int(need(row, ("added",), 0))
+            deleted = int(need(row, ("deleted",), 0))
+            observations.extend((
+                observation("change_frequency", {"type": "file", "path": path}, {
+                    "revisions": revisions[path], "unit": "Code Maat revisions",
+                    "metric_definition": "provider-defined Code Maat revisions",
+                }, prov),
+                observation("churn", {"type": "file", "path": path}, {
+                    "lines_added": added, "lines_deleted": deleted,
+                    "absolute_churn": added + deleted, "unit": "lines",
+                    "metric_definition": "Code Maat entity-churn absolute line counts",
+                }, prov),
+            ))
+    else:
+        for row_number, row in enumerate(maat_rows(args), start=2):
+            if args.analysis == "revisions":
+                path = need(row, ("entity", "module"), row_number)
+                revisions = int(need(row, ("n-revs", "revisions"), row_number))
+                observations.append(observation("change_frequency", {"type": "file", "path": path}, {
+                    "revisions": revisions,
+                    "unit": "Code Maat revisions",
+                    "metric_definition": "provider-defined Code Maat revisions",
+                }, prov))
+            elif args.analysis == "entity-churn":
+                path = need(row, ("entity", "module"), row_number)
+                added = int(need(row, ("added",), row_number))
+                deleted = int(need(row, ("deleted",), row_number))
+                observations.append(observation("churn", {"type": "file", "path": path}, {
+                    "lines_added": added,
+                    "lines_deleted": deleted,
+                    "absolute_churn": added + deleted,
+                    "unit": "lines",
+                    "metric_definition": "Code Maat entity-churn absolute line counts",
+                }, prov))
+            elif args.analysis == "authors":
+                path = need(row, ("entity", "module"), row_number)
+                authors = int(need(row, ("n-authors", "authors"), row_number))
+                revisions = int(need(row, ("n-revs", "revisions"), row_number))
+                observations.append(observation("ownership", {"type": "file", "path": path}, {
+                    "authors": authors,
+                    "revisions": revisions,
+                    "metric_definition": "Code Maat distinct authors and revisions",
+                }, prov))
+            elif args.analysis == "coupling":
+                left = need(row, ("entity",), row_number)
+                right = need(row, ("coupled",), row_number)
+                degree = float(need(row, ("degree",), row_number))
+                metrics: dict[str, Any] = {
+                    "coupling": degree,
+                    "range": [0, 100],
+                    "unit": "percent",
+                    "metric_definition": "Code Maat coupling degree; provider semantics preserved",
+                }
+                if row.get("average-revs"):
+                    metrics["average_revisions"] = float(row["average-revs"])
+                for source, destination in (("shared-revisions", "shared_revisions"), ("entity-revisions", "left_revisions"), ("coupled-revisions", "right_revisions")):
+                    if row.get(source):
+                        metrics[destination] = int(row[source])
+                observations.append(observation("temporal_coupling", {"type": "file_pair", "paths": [left, right]}, metrics, prov))
     store = {
         "schema_version": SCHEMA_VERSION,
         "store_kind": "codebase-intelligence-evidence",
@@ -739,8 +890,9 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--max-commits", type=int)
     command.add_argument("--max-changeset-size", type=int, default=30)
     command.add_argument("--min-shared-commits", type=int, default=2)
-    command.add_argument("--maat-analysis", choices=("revisions", "entity-churn", "authors", "coupling"))
+    command.add_argument("--maat-analysis", choices=("revisions", "entity-churn", "authors", "coupling", "hotspots"))
     command.add_argument("--input", help="current Code Maat CSV input")
+    command.add_argument("--churn-input", help="current Code Maat entity-churn CSV for hotspot cache validation")
 
     command = sub.add_parser("query", help="filter and rank evidence without dumping the full store")
     command.add_argument("--store", required=True)
@@ -750,11 +902,16 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("--min", type=float)
     command.add_argument("--limit", type=int, default=20)
 
+    command = sub.add_parser("rank-hotspots", help="rank bounded hotspot candidates from normalized evidence")
+    command.add_argument("--store", required=True)
+    command.add_argument("--limit", type=int, default=20)
+
     command = sub.add_parser("adapt-code-maat", help="normalize a Code Maat CSV")
     command.add_argument("--repo", default=".")
     command.add_argument("--input", required=True)
     command.add_argument("--output")
-    command.add_argument("--analysis", required=True, choices=("revisions", "entity-churn", "authors", "coupling"))
+    command.add_argument("--analysis", required=True, choices=("revisions", "entity-churn", "authors", "coupling", "hotspots"))
+    command.add_argument("--churn-input", help="Code Maat entity-churn CSV for hotspot adaptation")
     command.add_argument("--provider-version", required=True)
 
     command = sub.add_parser("verify-references", help="verify repository-relative paths and lexical symbols")
@@ -787,6 +944,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0 if data["valid"] else 1
         elif args.command == "query":
             data = query_store(args)
+        elif args.command == "rank-hotspots":
+            data = rank_hotspots(load_json(args.store), args.limit)
         elif args.command == "adapt-code-maat":
             data = adapt_code_maat(args)
             write_json(data, args.output)

@@ -187,6 +187,7 @@ python3 shared/scripts/codebase_intelligence.py analyze-history --repo /path/to/
 python3 shared/scripts/codebase_intelligence.py validate --store /tmp/evidence.json
 python3 shared/scripts/codebase_intelligence.py cache-status --repo /path/to/repo --store /tmp/evidence.json --provider git
 python3 shared/scripts/codebase_intelligence.py query --store /tmp/evidence.json --type temporal_coupling --metric coupling --limit 12
+python3 shared/scripts/codebase_intelligence.py rank-hotspots --store /tmp/evidence.json --limit 12
 ```
 
 Other commands calculate a default ephemeral store path, adapt Code Maat CSV for supported analyses, and verify repository-relative paths plus lexical symbol occurrences. Run `--help` for the complete interface.
@@ -199,12 +200,15 @@ The built-in provider emits:
 - added, deleted, and absolute line churn;
 - distinct-author and primary-author contribution observations;
 - temporal coupling as `shared_commits / min(left_revisions, right_revisions)`.
+- a language-agnostic `complexity` observation containing current tracked physical LOC as a pragmatic size proxy; blank lines count, a final newline does not add a line, binary files and obvious generated/vendor/build/cache paths are excluded.
+
+`rank-hotspots` multiplies the descending within-set rank of change frequency by the descending within-set rank of LOC. This follows the behavioral hotspot idea that frequently changed and large areas deserve attention while preventing a very large, rarely changed file from dominating on size alone. The score is a candidate-prioritization observation, not a technical-debt conclusion.
 
 The fallback excludes changesets above a configurable cap from pair generation, disables rename detection, records binary revisions separately, and flags shallow or insufficient history. These choices and all analysis parameters are recorded in provenance.
 
 ### Code Maat
 
-Code Maat is optional, never installed silently, and not required for a useful analysis. The adapter currently normalizes `revisions`, `entity-churn`, `authors`, and `coupling` CSV. It preserves Code Maat coupling as a percentage with provider-defined semantics instead of pretending it is equivalent to the Git fallback ratio. Code Maat requires a JVM or container and may have significant memory cost; its current project documentation should be checked before recommending installation.
+Code Maat is the preferred language-agnostic behavioral hotspot provider when available and approved, but is optional and never installed silently. The adapter normalizes its `revisions` and `entity-churn` CSV separately, or combines the two native outputs with `--analysis hotspots --input <revisions.csv> --churn-input <entity-churn.csv>`; `rank-hotspots` then uses provider revisions plus provider absolute entity churn. It preserves Code Maat coupling as a percentage with provider-defined semantics instead of pretending it is equivalent to the Git fallback ratio. Code Maat requires a JVM or container and may have significant memory cost; its current project documentation should be checked before recommending installation.
 
 Code Maat cache checks require its current discovered version, current CSV input, and analysis name. If the optional tool or version cannot be determined, its existing evidence is not reused; the Git fallback remains available.
 
@@ -251,7 +255,7 @@ Validity is based on inputs, not age:
 
 - all stores require schema v1, the same repository identity and HEAD, provider/version, analyzer version, and parameters;
 - `committed_history` evidence remains valid across dirty working-tree changes because those files were not inputs;
-- working-tree analyses must also match dirty state and the content-sensitive working-tree fingerprint;
+- working-tree analyses must also match dirty state and the content-sensitive working-tree fingerprint; Git+LOC fallback stores use this rule because current tracked source is a LOC input;
 - provider-version, parameter, schema, repository, or relevant input changes invalidate reuse.
 
 `cache-status` requires the intended provider. Its provider-specific request options construct the expected parameters and inputs, so the normal workflow cannot silently omit parameter checking or treat a cached provider version as the current version. File subjects are validated as normalized repository-relative identifiers, and observation provenance must exactly match store provenance.
@@ -262,7 +266,7 @@ Shallow history remains valid evidence about the available commits but carries a
 
 `discover` inventories source extensions, common manifests, and available commands. Skills first look for project-configured tooling. Capability-oriented candidates include dependency analyzers, complexity tools, coverage providers, and architecture-rule tools for Python, JS/TS, Java/Kotlin, Go, Rust, .NET, C/C++, Ruby, PHP, and Swift.
 
-If an optional tool is missing, the skill explains the capability, value, dependencies, privacy characteristics, and fallback, then asks permission before installation. If declined, the suite falls back to Git, repository structure, `rg`/`grep`, manifests, project configuration, tests, and selective source inspection. Unsupported or unusual languages still receive this core workflow; unavailable metrics are reported as unavailable, never fabricated.
+If Code Maat is missing, unsuitable, or declined, the hotspot skill falls back to Git change frequency plus LOC and remains useful for unsupported or unusual languages. Rich cyclomatic, cognitive, AST, dependency, or coverage tools may improve later semantic investigation but are not prerequisites for baseline hotspot discovery. Any optional installation is explained and permissioned; nothing is installed silently.
 
 ## Verification
 
@@ -291,14 +295,14 @@ make test
 make validate
 ```
 
-Tests create small temporary Git fixtures under `tests/` and remove them afterward. They cover history/churn/coupling/ownership normalization, filtering, Code Maat adaptation and malformed output, path/symbol checks, shallow and insufficient history, dirty-tree behavior, HEAD/provider/analyzer/parameter/schema invalidation, missing Git history, unusual languages, nested manifests, and available/absent tool discovery.
+Tests create small temporary Git fixtures under `tests/` and remove them afterward. They cover history/churn/ownership normalization, Git+LOC fallback ranking and exclusions, deterministic LOC and cache invalidation, Code Maat provider semantics, filtering, malformed output, path/symbol checks, shallow and insufficient history, HEAD/provider/analyzer/parameter/schema invalidation, missing Git history, unusual languages, nested manifests, and available/absent tool discovery.
 
 No external repository was cloned or used for testing. The semantic quality of the nine skills on real repositories remains a deliberate manual validation step.
 
 ## Limitations
 
 - No general multi-language AST/call-graph engine is bundled. Static relationships use configured ecosystem tools or targeted source inspection.
-- Complexity and coverage require existing/project-approved providers; their schema types are ready, but this release does not invent replacement metrics.
+- Rich complexity and coverage require existing/project-approved providers; baseline hotspots use only the explicitly labeled Git physical-LOC proxy when Code Maat is unavailable.
 - The Git parser disables rename detection and is optimized for ordinary repository-relative paths; pathological filenames containing tabs/newlines may require a provider adapter.
 - Author identity follows Git author names and can be distorted by aliases, bots, rebases, squashes, or incomplete history.
 - Component aggregation remains semantic/manual unless repository boundaries or an explicit mapping support it.

@@ -95,17 +95,86 @@ class InfrastructureTests(unittest.TestCase):
         self.assertEqual(1.0, coupling["metrics"]["coupling"])
         self.assertIn("metric_definition", coupling["metrics"])
 
-    def test_committed_history_cache_survives_dirty_tree_but_not_new_head(self) -> None:
+    def test_hotspot_cache_invalidates_when_working_tree_loc_input_changes(self) -> None:
         repo = self.make_repo()
         store = cbi.analyze_history(self.history_args(repo.root))
         store_path = self.write_store(store)
         repo.write("src/a.py", "dirty\n")
         args = self.cache_args(repo.root, store_path)
-        self.assertTrue(cbi.cache_status(args)["valid"])
+        status = cbi.cache_status(args)
+        self.assertFalse(status["valid"])
+        self.assertIn("working tree inputs changed", status["reasons"])
         repo.commit("new head")
         status = cbi.cache_status(args)
         self.assertFalse(status["valid"])
         self.assertIn("repository_head changed", status["reasons"])
+
+    def test_git_fallback_measures_loc_and_ranks_change_frequency_with_size(self) -> None:
+        root = self.base / "hotspots"
+        root.mkdir()
+        repo = RepositoryFixture(root)
+        repo.write("src/tiny.py", "x\n")
+        repo.write("src/large.py", "\n".join(["x"] * 8) + "\n")
+        repo.write("src/rare.py", "\n".join(["x"] * 100) + "\n")
+        repo.write("vendor/generated.py", "x\n")
+        repo.write("build/cache.py", "x\n")
+        repo.commit("initial")
+        for index in range(3):
+            repo.write("src/tiny.py", f"x = {index}\n")
+            repo.write("src/large.py", "\n".join([f"x = {index}"] * 8) + "\n")
+            repo.commit(f"frequent change {index}")
+        store = cbi.analyze_history(self.history_args(root))
+        loc = {
+            item["subject"]["path"]: item["metrics"]["loc"]
+            for item in store["observations"] if item["type"] == "complexity"
+        }
+        self.assertEqual({"src/tiny.py", "src/large.py", "src/rare.py"}, set(loc))
+        self.assertEqual(8, loc["src/large.py"])
+        self.assertNotIn("vendor/generated.py", loc)
+        self.assertNotIn("build/cache.py", loc)
+        ranked = cbi.rank_hotspots(store, limit=None)["candidates"]
+        self.assertEqual("src/large.py", ranked[0]["path"])
+        self.assertNotEqual("src/rare.py", ranked[0]["path"])
+
+    def test_loc_counts_blank_lines_and_repository_relative_subjects(self) -> None:
+        repo = self.make_repo()
+        repo.write("src/loc.py", "first\n\nthird")
+        repo.commit("add loc fixture")
+        store = cbi.analyze_history(self.history_args(repo.root))
+        item = next(item for item in store["observations"] if item["type"] == "complexity" and item["subject"]["path"] == "src/loc.py")
+        self.assertEqual(3, item["metrics"]["loc"])
+        self.assertEqual("physical_lines", item["metrics"]["unit"])
+        self.assertNotIn("/", item["subject"]["path"][:1])
+
+    def test_code_maat_ranking_uses_provider_churn_without_fallback_loc(self) -> None:
+        repo = self.make_repo()
+        csv_path = self.base / "revisions.csv"
+        csv_path.write_text("entity,n-revs\nsrc/a.py,8\nsrc/b.py,2\n", encoding="utf-8")
+        store = cbi.adapt_code_maat(argparse.Namespace(
+            repo=str(repo.root), input=str(csv_path), analysis="revisions", provider_version="X",
+        ))
+        prov = store["provenance"]
+        for path, value in (("src/a.py", 20), ("src/b.py", 2)):
+            store["observations"].append(cbi.observation("churn", {"type": "file", "path": path}, {
+                "lines_added": value, "lines_deleted": 0, "absolute_churn": value,
+                "unit": "lines", "metric_definition": "Code Maat entity-churn absolute line counts",
+            }, prov))
+        self.assertEqual([], cbi.validate_store(store))
+        result = cbi.rank_hotspots(store, limit=None)
+        self.assertEqual("code-maat", result["provider"])
+        self.assertNotIn("loc", result["candidates"][0])
+        self.assertIn("provider absolute entity churn", result["metric_definition"])
+
+        revisions = self.base / "maat-revisions.csv"
+        churn = self.base / "maat-churn.csv"
+        revisions.write_text("entity,n-revs\nsrc/a.py,8\nsrc/b.py,2\n", encoding="utf-8")
+        churn.write_text("entity,added,deleted\nsrc/a.py,20,0\nsrc/b.py,2,0\n", encoding="utf-8")
+        combined = cbi.adapt_code_maat(argparse.Namespace(
+            repo=str(repo.root), input=str(revisions), churn_input=str(churn),
+            analysis="hotspots", provider_version="X",
+        ))
+        self.assertEqual([], cbi.validate_store(combined))
+        self.assertEqual("src/a.py", cbi.rank_hotspots(combined, limit=1)["candidates"][0]["path"])
 
     def test_normal_cache_workflow_requires_and_checks_analysis_parameters(self) -> None:
         repo = self.make_repo()
