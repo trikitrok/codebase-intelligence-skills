@@ -1,0 +1,32 @@
+{
+  "name": "codebase-intelligence",
+  "version": "0.1.0",
+  "description": "Evidence-backed skills for understanding, investigating, verifying, and planning changes to software repositories.",
+  "author": {
+    "name": "Codebase Intelligence contributors"
+  },
+  "keywords": [
+    "codebase",
+    "architecture",
+    "repository-analysis",
+    "developer-tools"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Codebase Intelligence",
+    "shortDescription": "Evidence-backed repository understanding",
+    "longDescription": "Nine focused skills combine targeted source inspection, Git history, deterministic evidence, and explicit verification.",
+    "developerName": "Codebase Intelligence contributors",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Read",
+      "Analyze"
+    ],
+    "defaultPrompt": [
+      "Use $codebase-onboarding to explain this repository.",
+      "Use $codebase-hotspots to find maintenance candidates.",
+      "Use $codebase-verify to audit this architecture document."
+    ],
+    "brandColor": "#315C7D"
+  }
+}

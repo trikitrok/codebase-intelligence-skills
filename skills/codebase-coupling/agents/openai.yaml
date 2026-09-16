@@ -1,0 +1,6 @@
+interface:
+  display_name: "Codebase Coupling"
+  short_description: "Explain static and evolutionary coupling"
+  default_prompt: "Use $codebase-coupling to find and explain hidden coupling in this repository."
+policy:
+  allow_implicit_invocation: false

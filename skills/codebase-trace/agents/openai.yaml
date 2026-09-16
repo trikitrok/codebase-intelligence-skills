@@ -1,0 +1,6 @@
+interface:
+  display_name: "Codebase Trace"
+  short_description: "Trace one behavior through implementation"
+  default_prompt: "Use $codebase-trace to follow this behavior through the repository."
+policy:
+  allow_implicit_invocation: false

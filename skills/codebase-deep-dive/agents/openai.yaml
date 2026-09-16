@@ -1,0 +1,6 @@
+interface:
+  display_name: "Codebase Deep Dive"
+  short_description: "Understand one subsystem in depth"
+  default_prompt: "Use $codebase-deep-dive to explain this subsystem in depth."
+policy:
+  allow_implicit_invocation: false

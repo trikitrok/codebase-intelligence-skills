@@ -1,0 +1,6 @@
+interface:
+  display_name: "Codebase Verify"
+  short_description: "Audit technical claims against source"
+  default_prompt: "Use $codebase-verify to audit this technical artifact against the repository."
+policy:
+  allow_implicit_invocation: false

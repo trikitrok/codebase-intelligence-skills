@@ -1,0 +1,6 @@
+interface:
+  display_name: "Codebase Architecture"
+  short_description: "Map evidence-backed system architecture"
+  default_prompt: "Use $codebase-architecture to explain this system's architecture."
+policy:
+  allow_implicit_invocation: false

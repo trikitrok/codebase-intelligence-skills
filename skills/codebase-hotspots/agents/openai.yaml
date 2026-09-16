@@ -1,0 +1,6 @@
+interface:
+  display_name: "Codebase Hotspots"
+  short_description: "Find and inspect maintenance candidates"
+  default_prompt: "Use $codebase-hotspots to investigate maintenance hotspots in this repository."
+policy:
+  allow_implicit_invocation: false
