@@ -1,6 +1,6 @@
 {
   "name": "codebase-intelligence",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Evidence-backed skills for understanding, investigating, verifying, and planning changes to software repositories.",
   "author": {
     "name": "Codebase Intelligence contributors"

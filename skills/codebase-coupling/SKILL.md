@@ -4,3 +4,9 @@ description: Explain temporal, static, logical/domain, and test coupling with se
 ---
 # Codebase coupling
 Read [analysis basics](../../shared/references/analysis-basics.md) and [history analysis](../../shared/references/history-analysis.md). Anchor a named subject or choose a small meaningful scope. Run `history_candidates.py temporal-coupling`, review quality, and select a bounded set. Inspect imports, calls, interfaces, models/state/configuration, messages, schemas, duplicated knowledge, fixtures, mocks, and coordinated tests; use configured dependency analysis only for a concrete gap. Compare temporal, static, logical, and test relationships and classify each as expected, potentially hidden, or unclear. Stop before an exhaustive graph or subsystem deep dive. Report endpoints, `S/T/L/X`, provider evidence, source/test evidence, status, implication, and uncertainty. Temporal coupling is not automatically a defect.
+
+When dependency direction or coupling relationships would be clearer visually,
+read [diagramming](../../shared/references/diagramming.md) and provide the
+verified units, relationships, dependency direction, boundaries, coupling type
+(temporal, static, logical/domain, or test), classification, supporting
+evidence, and uncertainty.
