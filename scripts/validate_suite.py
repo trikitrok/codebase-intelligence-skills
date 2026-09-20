@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 
 ROOT=Path(__file__).resolve().parents[1]
-EXPECTED={"codebase-onboarding","codebase-tutorial","codebase-architecture","codebase-trace","codebase-deep-dive","codebase-change","codebase-hotspots","codebase-coupling","codebase-verify"}
+EXPECTED={"codebase-onboarding","codebase-conversational-tutorial","codebase-architecture","codebase-trace","codebase-deep-dive","codebase-change","codebase-hotspots","codebase-coupling","codebase-verify"}
 OBSOLETE=("codebase_intelligence.py","default-store","analyze-history","cache-status","rank-hotspots","adapt-code-maat","verify-references","core.md","source-first.md","tool-first.md","tool-providers.md","evidence-contract.md","verification.md","tutorial-workflow.md","Evidence v1")
 def main():
     errors=[]

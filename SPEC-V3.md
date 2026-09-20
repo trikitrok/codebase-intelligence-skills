@@ -97,7 +97,7 @@ The final V3 repository MUST have this relevant structure:
 │   ├── codebase-onboarding/
 │   │   ├── SKILL.md
 │   │   └── agents/openai.yaml
-│   ├── codebase-tutorial/
+│   ├── codebase-conversational-tutorial/
 │   │   ├── SKILL.md
 │   │   └── agents/openai.yaml
 │   ├── codebase-architecture/
@@ -263,7 +263,7 @@ It MUST NOT contain:
 - Every skill MUST directly link to and read `analysis-basics.md`.
 - `codebase-hotspots` and `codebase-coupling` MUST additionally link to and read `history-analysis.md`.
 - No other skill loads `history-analysis.md` by default.
-- Tutorial-specific guidance MUST be contained in `skills/codebase-tutorial/SKILL.md`.
+- Tutorial-specific guidance MUST be contained in `skills/codebase-conversational-tutorial/SKILL.md`.
 - Verification-specific claim-audit behavior MUST be contained in `skills/codebase-verify/SKILL.md`.
 - Shared references MUST NOT link in a way that creates indirect loading of irrelevant workflows.
 
@@ -313,7 +313,7 @@ Do not expand into exhaustive architecture, a full tutorial, or a deep subsystem
 - prioritized reading order;
 - contradictions and limitations.
 
-### 6.2 `codebase-tutorial`
+### 6.2 `codebase-conversational-tutorial`
 
 #### Purpose
 
@@ -1608,7 +1608,7 @@ Migrate MUST proceed in bounded steps:
 4. Validate temporal fallback plus semantic static/logical/test inspection.
 5. Migrate all skills to `analysis-basics.md`.
 6. Ensure only hotspots and coupling load `history-analysis.md`.
-7. Fold tutorial guidance into `codebase-tutorial/SKILL.md`.
+7. Fold tutorial guidance into `codebase-conversational-tutorial/SKILL.md`.
 8. Move verify-specific instructions into `codebase-verify/SKILL.md`.
 9. Update tests and documentation with each migrated caller.
 
@@ -1640,7 +1640,7 @@ Only after the Migrate gate passes, Contract MUST:
    - `tool-providers.md`;
    - `evidence-contract.md`;
    - `verification.md`.
-3. Remove `skills/codebase-tutorial/references/tutorial-workflow.md` and its now-empty directory if applicable.
+3. Remove `skills/codebase-conversational-tutorial/references/tutorial-workflow.md` and its now-empty directory if applicable.
 4. Replace V2 infrastructure tests with focused V3 tests.
 5. Remove cache, generic provider, generic evidence, discovery, query, and lexical-verifier documentation.
 6. Update validation scripts for the final tree.

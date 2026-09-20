@@ -47,7 +47,7 @@ Proposed physical shape:
 ```text
 skills/
   codebase-onboarding/
-  codebase-tutorial/
+  codebase-conversational-tutorial/
   codebase-architecture/
   codebase-trace/
   codebase-deep-dive/
@@ -100,7 +100,7 @@ Classification legend:
 
 No repository mapper or entry-point detector is justified: selecting meaningful boundaries and reading order is the semantic work users are asking Codex to perform.
 
-### `codebase-tutorial`
+### `codebase-conversational-tutorial`
 
 1. **Codex semantic reasoning:** Adopt the requested audience and focus; otherwise assume a competent developer and proceed.
 2. **Deterministic built-in/local operation:** Perform the same cheap repository reconnaissance as onboarding.

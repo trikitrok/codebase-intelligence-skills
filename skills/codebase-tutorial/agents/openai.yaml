@@ -1,6 +1,0 @@
-interface:
-  display_name: "Codebase Tutorial"
-  short_description: "Teach a repository through core concepts"
-  default_prompt: "Use $codebase-tutorial to create a guided tutorial for this repository."
-policy:
-  allow_implicit_invocation: false
