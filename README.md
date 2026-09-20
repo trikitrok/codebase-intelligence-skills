@@ -2,6 +2,16 @@
 
 Codebase Intelligence is a local/private plugin of nine explicitly invoked Codex Agent Skills for repository understanding, investigation, verification, and change planning. Codex performs semantic inspection; the bundled helper only bounds historical hotspot and temporal-coupling candidates.
 
+## Installation
+
+To use these skills in existing or legacy repositories, install the
+`codebase-intelligence` plugin once through your personal Codex marketplace.
+The repositories you inspect do not need to become plugins or marketplaces,
+and you do not need to add `.agents/plugins/marketplace.json` to them.
+
+See [Installing Codebase Intelligence in Codex](docs/codebase-intelligence-installation.md)
+for the complete setup, verification, refresh, and troubleshooting steps.
+
 | Goal | Invocation |
 |---|---|
 | Orient | `$codebase-onboarding Orient me to this repository.` |
